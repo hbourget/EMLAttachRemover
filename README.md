@@ -1,4 +1,4 @@
-# Forensic Email Attachment Remover
+# EMLAttachRemover
 
 This tool processes `.eml` files to remove specified attachments based on a CSV file. It preservers file metadata and integrity.
 
