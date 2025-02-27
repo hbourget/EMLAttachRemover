@@ -24,9 +24,6 @@ logging.basicConfig(
 )
 
 def compute_hash(file_path):
-    """
-    Compute and return the SHA-256 hash of the file at file_path.
-    """
     hash_func = hashlib.sha256()
     with open(file_path, 'rb') as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -34,19 +31,6 @@ def compute_hash(file_path):
     return hash_func.hexdigest()
 
 def remove_attachments(msg, target_names, count, removed):
-    """
-    Recursively remove parts that are attachments if their filename is in target_names,
-    while counting removals and tracking which attachments were removed.
-
-    Parameters:
-      - msg: An email.message.Message object.
-      - target_names: A set of attachment filenames to delete.
-      - count: A counter tracking removals.
-      - removed: A set to store the names of attachments that were removed.
-
-    Returns:
-      - The modified message with specified attachments removed.
-    """
     if msg.is_multipart():
         new_payload = []
         for part in msg.get_payload():
@@ -57,21 +41,11 @@ def remove_attachments(msg, target_names, count, removed):
                 removed.add(filename)
                 continue
             else:
-                # Recursively process nested multiparts.
                 new_payload.append(remove_attachments(part, target_names, count, removed))
         msg.set_payload(new_payload)
     return msg
 
 def process_eml_file(input_path, output_path, target_attachment_names):
-    """
-    Process a single .eml file: remove specified attachments, preserve file metadata,
-    and write the cleaned email to the output path.
-
-    Parameters:
-      - input_path: Full path to the input .eml file.
-      - output_path: Full path where the cleaned .eml file will be saved.
-      - target_attachment_names: A set of attachment filenames to delete.
-    """
     try:
         with open(input_path, "rb") as f:
             msg = BytesParser(policy=policy.default).parse(f)
@@ -104,34 +78,28 @@ def process_eml_file(input_path, output_path, target_attachment_names):
 
     logging.info(f"Deleted {count[0]} attachments from {os.path.basename(input_path)}")
 
-    # Compare file hashes.
     try:
         input_hash = compute_hash(input_path)
         output_hash = compute_hash(output_path)
         if input_hash != output_hash:
-            logging.info(f"Hash mismatched for {os.path.basename(input_path)}: "
-                         f"Input hash: {input_hash}, Output hash: {output_hash}. Files are different.")
+            logging.info(f"Hash mismatched for {os.path.basename(input_path)}: Input hash: {input_hash}, Output hash: {output_hash}. Files are different.")
         else:
             logging.error(f"Hash match for {os.path.basename(input_path)}: {input_hash}. Files are the same!")
     except Exception as e:
         logging.error(f"Error computing file hash for {input_path} or {output_path}: {e}")
 
 def main():
-    """
-    Main function that reads the CSV input, groups the target attachments by .eml file,
-    and processes each file accordingly.
-    """
-    if len(sys.argv) != 2:
-        error_msg = "Usage: python remove_attachment.py input.csv"
+    if len(sys.argv) < 2:
+        error_msg = "Usage: python remove_attachment.py input.csv [-rem2]"
         print(error_msg)
         logging.error(error_msg)
         sys.exit(1)
 
     csv_file = os.path.join(script_dir, sys.argv[1])
-    logging.info(f"Starting CSV processing: {csv_file}")
+    # Vérifier si l'option -rem2 est présente dans les arguments
+    rem2 = "-rem2" in sys.argv[2:]
+    logging.info(f"Starting CSV processing: {csv_file} | Remove 2 characters: {rem2}")
 
-    # Read the CSV and group attachment names by .eml file name.
-    # CSV Format: eml_filename;attachment_filename
     files_to_remove = {}
     try:
         with open(csv_file, newline="") as csvfile:
@@ -142,6 +110,12 @@ def main():
                     continue
                 eml_filename = row[0].strip()
                 attachment_name = row[1].strip()
+                # Si l'option -rem2 est activée, on retire les deux premiers caractères
+                if rem2:
+                    if len(attachment_name) >= 2:
+                        attachment_name = attachment_name[2:]
+                    else:
+                        attachment_name = ""
                 if not eml_filename:
                     logging.warning(f"Skipping row with empty filename: {row}")
                     continue
@@ -155,15 +129,16 @@ def main():
     output_dir = os.path.join(script_dir, "outputs")
     os.makedirs(output_dir, exist_ok=True)
 
-    # Process each file.
     for eml_filename, attachment_names in files_to_remove.items():
         input_eml_path = os.path.join(input_dir, eml_filename)
         if not os.path.exists(input_eml_path):
             logging.error(f"Input file not found: {input_eml_path}")
             continue
-        name, ext = os.path.splitext(eml_filename)
-        clean_filename = f"{name}_clean{ext}"
-        output_eml_path = os.path.join(output_dir, clean_filename)
+
+        base, ext = os.path.splitext(eml_filename)
+        output_eml_path = os.path.join(output_dir, base + "_clean" + ext)
+        os.makedirs(os.path.dirname(output_eml_path), exist_ok=True)
+
         logging.info(f"Processing {eml_filename} to remove attachments: {attachment_names}")
         process_eml_file(input_eml_path, output_eml_path, attachment_names)
 
